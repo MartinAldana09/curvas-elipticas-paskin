@@ -1,3 +1,0 @@
-# Los programas 01-10 solo usan la biblioteca estandar de Python (3.8+).
-# matplotlib solo se necesita para regenerar las figuras del informe.
-matplotlib>=3.5
