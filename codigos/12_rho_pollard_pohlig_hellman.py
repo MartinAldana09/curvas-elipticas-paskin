@@ -31,6 +31,12 @@ Resultados esperados
   primo, mientras que Pohlig-Hellman resuelve al instante si el orden es suave.
 
 AVISO: educativo. Con n de 256 bits, rho necesitaria unas 2^128 operaciones.
+
+Prueba con tus propios datos
+----------------------------
+    python 12_rho_pollard_pohlig_hellman.py 123456789
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 12_rho_pollard_pohlig_hellman.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 import random
@@ -242,7 +248,8 @@ def pruebas():
     print("12_rho_pollard_pohlig_hellman: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     E = Curva(24, 13, 29)
     G = (1, 3)
     k, pasos = rho_pollard(E, G, (15, 6), 19, particiones=4)
@@ -272,5 +279,132 @@ if __name__ == "__main__":
     k2 = pohlig_hellman(E2, G2, Q, n2)
     print(f"      Pohlig-Hellman: k correcto = {k2 == k}, {E2.sumas} sumas, "
           f"{time.perf_counter() - t:.3f} s")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe tu numero secreto k (un entero >= 1). Eve solo vera el punto Q = kG\n"
+            "e intentara recuperar k. Solo Enter = ejemplo de clase: ")
+USO = "python 12_rho_pollard_pohlig_hellman.py 123456789"
+
+
+def pohlig_hellman_con_detalle(E, G, Q, n):
+    """Igual que pohlig_hellman, pero imprime k modulo cada potencia de primo."""
+    residuos, modulos = [], []
+    for q, e in factorizar(n).items():
+        G0 = E.multiplicar(n // q, G)
+        k_qe = 0
+        for i in range(e):
+            resto = E.suma(Q, E.negativo(E.multiplicar(k_qe, G)))
+            Qi = E.multiplicar(n // q ** (i + 1), resto)
+            k_qe += log_en_subgrupo_pequeno(E, G0, Qi, q) * q ** i
+        print(f"      subgrupo de orden {q ** e:>4}:  k = {k_qe} (mod {q ** e})")
+        residuos.append(k_qe)
+        modulos.append(q ** e)
+    return tcr(residuos, modulos)
+
+
+def con_tus_datos(texto):
+    try:
+        k = leer_enteros(texto)[0]
+    except (ValueError, IndexError):
+        print("Escribe un numero entero. Ejemplo:\n  " + USO)
+        return
+    if k < 1:
+        print("k debe ser >= 1. Ejemplo:\n  " + USO)
+        return
+    print(f"Tu secreto: k = {k}")
+
+    E = Curva(24, 13, 29)
+    G = (1, 3)
+    print("\n1. Curva de clase (G = (1,3) de orden 19):")
+    if k % 19 == 0:
+        print("   k es multiplo de 19, asi que Q = kG = O: no esconde nada. Prueba otro k.")
+    else:
+        Q = E.multiplicar(k, G)
+        k1, pasos = rho_pollard(E, G, Q, 19, particiones=4)
+        print(f"   Q = kG = {Q}.  Rho de Pollard encuentra k = {k1} en {pasos} pasos.")
+        print(f"   Como 19G = O, Eve solo puede (y solo necesita) saber k mod 19 = {k % 19}: {k1 == k % 19}")
+
+    print("\n2. Curva de 32 bits con orden PRIMO (asi deben ser las curvas en la practica):")
+    E1, G1, n1 = buscar_curva(32, es_primo, semilla=7)
+    k_1 = k % n1
+    if k_1 == 0:
+        print("   k es multiplo del orden; prueba otro k.")
+    else:
+        Q1 = E1.multiplicar(k_1, G1)
+        print(f"   orden n = {n1} (primo).  Q = kG = {Q1}")
+        E1.sumas = 0
+        t = time.perf_counter()
+        k1, pasos = rho_pollard(E1, G1, Q1, n1)
+        print(f"   Rho de Pollard: k = {k1}  (correcto: {k1 == k_1});  {pasos} pasos,"
+              f" ~sqrt(pi n/2) = {int(math.sqrt(math.pi * n1 / 2))};  {time.perf_counter() - t:.2f} s")
+
+    print("\n3. Curva de 32 bits con orden SUAVE (producto de primos pequenos: mala eleccion):")
+    suave = lambda N: max(factorizar(N)) < 1000
+    E2, G2, n2 = buscar_curva(32, suave, semilla=8)
+    k_2 = k % n2
+    Q2 = E2.multiplicar(k_2, G2)
+    escrito = " * ".join(f"{p}^{e}" if e > 1 else str(p) for p, e in factorizar(n2).items())
+    print(f"   orden n = {n2} = {escrito}.  Q = kG = {Q2}")
+    print("   Pohlig-Hellman resuelve un problema pequeno en cada subgrupo:")
+    t = time.perf_counter()
+    k2 = pohlig_hellman_con_detalle(E2, G2, Q2, n2)
+    print(f"   y el TCR los junta: k = {k2}  (correcto: {k2 == k_2});  {time.perf_counter() - t:.3f} s")
+    if k >= n2:
+        print(f"   (Eve obtiene k mod n = {k_2}, que es todo lo que importa porque nG = O)")
+
+    print("\nCon un orden primo de 256 bits, rho necesitaria unas 2^128 operaciones: imposible hoy.")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 12_rho_pollard_pohlig_hellman.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
