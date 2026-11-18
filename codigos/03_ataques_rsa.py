@@ -20,6 +20,12 @@ eleccion de parametros o una implementacion descuidada.
 
 AVISO: codigo educativo, para entender por que existen las reglas de uso
 seguro de RSA. No debe usarse contra sistemas ajenos.
+
+Prueba con tus propios datos
+----------------------------
+    python 03_ataques_rsa.py "Martin"
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 03_ataques_rsa.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 import random
@@ -323,7 +329,8 @@ def pruebas():
     print("03_ataques_rsa: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     print("D. Wiener sobre N =", EJEMPLO_WIENER["N"])
     p, q, d = wiener(**EJEMPLO_WIENER, mostrar=True)
     print(f"  p = {p}, q = {q}, d = {d}")
@@ -334,5 +341,142 @@ if __name__ == "__main__":
     print("F. Pollard p - 1 con B = 100:")
     f = pollard_p_menos_1(EJEMPLO_POLLARD, B=100)
     print(f"  factor = {f},  cofactor = {EJEMPLO_POLLARD // f}")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe un mensaje corto (hasta 50 caracteres) para ver como lo recupera\n"
+            "un atacante cuando RSA se usa mal. Solo Enter = ejemplo de clase: ")
+USO = 'python 03_ataques_rsa.py "Martin"'
+
+
+def a_texto(m):
+    return m.to_bytes((m.bit_length() + 7) // 8, "big").decode("utf-8", errors="replace")
+
+
+def con_tus_datos(mensaje):
+    datos = mensaje.encode("utf-8")
+    if len(datos) > 50:
+        print("El mensaje es muy largo para estos ejemplos (maximo 50 bytes). Ejemplo:\n  " + USO)
+        return
+    m = int.from_bytes(datos, "big")
+    print(f'Tu mensaje: "{mensaje}"  ->  m = {m}')
+    print("Eve (la atacante) NO conoce ninguna clave privada; solo ve lo que viaja por la red.")
+
+    # E. Hastad -------------------------------------------------------------
+    print("\n1. Ataque de Hastad: Alice envia el MISMO mensaje a 3 personas, con e = 3 y sin relleno.")
+    claves = [claves_rsa(512, e=3) for _ in range(3)]
+    modulos = [c[0] for c in claves]
+    cifrados = [pow(m, 3, N) for N in modulos]
+    for i, (N, c) in enumerate(zip(modulos, cifrados), 1):
+        print(f"   destinatario {i}: N{i} = {corto(N)}   c{i} = m^3 mod N{i} = {corto(c)}")
+    C = tcr(cifrados, modulos)
+    print(f"   Eve junta c1, c2, c3 con el TCR: obtiene m^3 como entero = {corto(C)}")
+    if m ** 3 < min(modulos):
+        print("   (tu mensaje es corto: m^3 < N, asi que los tres cifrados son iguales a m^3")
+        print("    y bastaria la raiz cubica de c1; con mensajes largos SI hace falta el TCR)")
+    M = hastad(cifrados, modulos, 3)
+    print(f"   raiz cubica entera de ese numero: {M}  ->  \"{a_texto(M)}\"")
+
+    # B. Modulo comun ---------------------------------------------------------
+    print("\n2. Modulo comun: el mismo mensaje se cifra con el mismo N y dos exponentes e1, e2.")
+    N, e1, d1, p, q = claves_rsa(512)
+    e2 = 17
+    c1, c2 = pow(m, e1, N), pow(m, e2, N)
+    g, a, b = euclides_extendido(e1, e2)
+    print(f"   N = {corto(N)},  e1 = {e1},  e2 = {e2}")
+    print(f"   c1 = {corto(c1)},  c2 = {corto(c2)}")
+    print(f"   Bezout: {e1}*({a}) + {e2}*({b}) = {g}")
+    M = ataque_modulo_comun(N, e1, e2, c1, c2)
+    print(f"   c1^({a}) * c2^({b}) mod N = m^1 = {M}  ->  \"{a_texto(M)}\"")
+
+    # A. Conocer d permite factorizar -------------------------------------------
+    print("\n3. Si alguien conoce d (por ejemplo, la clave se filtro), puede factorizar N:")
+    f = factorizar_con_d(N, e1, d1)
+    print(f"   factores encontrados: {corto(f[0])} y {corto(f[1])};  correctos: {set(f) == {p, q}}")
+    print("   Por eso, si se filtra d, no basta cambiar e: hay que cambiar tambien N.")
+
+    # D. Wiener -----------------------------------------------------------------
+    print("\n4. Ataque de Wiener: Bob eligio un exponente privado d demasiado pequeno.")
+    while True:
+        p, q = primo_aleatorio(256), primo_aleatorio(256)
+        if q < p < 2 * q:
+            break
+    N, phi = p * q, (p - 1) * (q - 1)
+    while True:
+        d = random.randrange(3, raiz_entera(N, 4) // 3)
+        if math.gcd(d, phi) == 1:
+            break
+    e = inverso_modular(d, phi)
+    c = pow(m, e, N)
+    print(f"   clave publica: N = {corto(N)},  e = {corto(e)}  (e se ve normal)")
+    print(f"   c = m^e mod N = {corto(c)}")
+    resultado = wiener(N, e, mostrar=True)
+    if resultado:
+        _, _, d_eve = resultado
+        print(f"   Eve obtiene d = {d_eve} con las fracciones continuas de e/N (el d real: {d})")
+        print(f"   y descifra: c^d mod N  ->  \"{a_texto(pow(c, d_eve, N))}\"")
+
+    # G. Fallo en el descifrado con TCR -----------------------------------------
+    print("\n5. Fallo de hardware: Bob firma tu mensaje con el TCR y la parte modulo q sale mal.")
+    N, e, d, p, q = claves_rsa(512)
+    f = ataque_por_fallo(N, e, d, p, q, m)
+    print(f"   con UNA sola firma defectuosa: mcd(S'^e - m, N) = {corto(f)}")
+    print(f"   es el primo p de Bob: {f == p}.  N queda factorizado y la clave, rota.")
+
+    print("\nNinguno de estos ataques rompe RSA bien usado: aprovechan e pequeno sin relleno,")
+    print("d pequeno, claves filtradas o fallos de implementacion.")
+    print("(Pollard p - 1 no depende del mensaje: se ve con  python 03_ataques_rsa.py --ejemplo)")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 03_ataques_rsa.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
