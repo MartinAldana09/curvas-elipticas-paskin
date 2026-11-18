@@ -24,6 +24,12 @@ m = 7  ->  c = 13  ->  descifrado 7.
 
 AVISO: este RSA "de libro" (sin relleno aleatorio OAEP) es INSEGURO.
 Solo sirve para entender las matematicas.
+
+Prueba con tus propios datos
+----------------------------
+    python 02_rsa.py "Martin Aldana"
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 02_rsa.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import random
 
@@ -176,7 +182,8 @@ def pruebas():
     print("02_rsa: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     pub, priv = claves_desde_primos(5, 11, 3)
     print("Ejemplo de clase: clave publica", pub, " d =", priv[2])
     c = cifrar(7, pub)
@@ -187,5 +194,121 @@ if __name__ == "__main__":
     c = cifrar(m, pub)
     print("RSA de 512 bits: N tiene", pub[0].bit_length(), "bits")
     print("  'ECC' -> c =", hex(c)[:34], "...  -> descifrado:", entero_a_texto(descifrar_tcr(c, priv)))
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = "Escribe tu mensaje (por ejemplo, tu nombre). Solo Enter = ejemplo de clase: "
+USO = 'python 02_rsa.py "Martin Aldana"'
+
+
+def con_tus_datos(mensaje):
+    print(f'Tu mensaje: "{mensaje}"')
+
+    # ---------------- Parte A: version de juguete -------------------------
+    p, q, e = 61, 53, 17
+    (N, _), (_, _, d) = claves_desde_primos(p, q, e)
+    print("\n=== Parte A. RSA de juguete, letra por letra (p = 61, q = 53) ===")
+    print(f"N = 61*53 = {N},  phi = 60*52 = {(p - 1) * (q - 1)},  e = {e},  d = e^(-1) mod phi = {d}")
+    print("Cada caracter se cambia por su codigo (byte UTF-8, un numero de 0 a 255) y se cifra:")
+    print("   caracter | codigo m | cifrado c = m^17 mod 3233 | descifrado c^2753 mod 3233")
+    vistos = {}
+    for byte in mensaje.encode("utf-8")[:24]:
+        c = pow(byte, e, N)
+        letra = repr(chr(byte)) if byte < 128 else "(byte)"
+        print(f"   {letra:>8} | {byte:8d} | {c:25d} | {pow(c, d, N):10d}")
+        vistos.setdefault(byte, []).append(c)
+    repetidos = [chr(b) for b, lista in vistos.items() if len(lista) > 1 and b < 128]
+    if len(mensaje.encode("utf-8")) > 24:
+        print("   (solo se muestran los primeros 24 caracteres)")
+    if len(repetidos) == 1:
+        print(f"Fijate: {repetidos[0]!r} se repite y SIEMPRE da el mismo cifrado.")
+    elif repetidos:
+        print(f"Fijate: {', '.join(repr(r) for r in repetidos)} se repiten y cada una SIEMPRE da el mismo cifrado.")
+    print("Cifrar letra por letra es inseguro: letras iguales dan cifrados iguales")
+    print("(analisis de frecuencias, como en el cifrado de Cesar) y N = 3233 se factoriza al instante.")
+
+    # ---------------- Parte B: tamano real ---------------------------------
+    m = texto_a_entero(mensaje)
+    bits = max(512, (m.bit_length() // 64 + 2) * 64)      # N debe ser mayor que m
+    print(f"\n=== Parte B. RSA de {bits} bits con el mensaje completo ===")
+    print("(los primos se eligen al azar: si ejecutas otra vez, todos los numeros cambian,")
+    print(" pero el descifrado siempre devuelve tu mensaje)")
+    (N, e), (p, q, d) = generar_claves(bits)
+    phi = (p - 1) * (q - 1)
+    print(f"\nPaso 1. Bob genera dos primos de {bits // 2} bits (probados con Miller-Rabin):")
+    print(f"   p = {p}")
+    print(f"   q = {q}")
+    print(f"Paso 2. N = p*q ({N.bit_length()} bits, {len(str(N))} cifras):")
+    print(f"   N = {N}")
+    print(f"Paso 3. phi(N) = (p - 1)(q - 1) = {phi}")
+    print(f"Paso 4. Exponente publico e = {e}  (mcd(e, phi) = 1)")
+    print(f"Paso 5. Exponente privado d = e^(-1) mod phi(N) = {d}")
+    print(f"   comprobacion: e*d mod phi(N) = {e * d % phi}")
+    print("   Clave publica (la conoce todo el mundo): (N, e).  Clave privada (solo Bob): d, p, q.")
+    datos = mensaje.encode("utf-8")
+    print("Paso 6. Alice convierte el texto en un numero (bytes UTF-8 en base 256):")
+    print(f"   bytes: {' '.join(f'{b:02X}' for b in datos)}   (hexadecimal)")
+    print(f"   m = {m}   (m < N: si)")
+    c = cifrar(m, (N, e))
+    print("Paso 7. Alice cifra con la clave publica: c = m^e mod N =")
+    print(f"   c = {c}")
+    m2 = descifrar(c, (p, q, d))
+    print("Paso 8. Bob descifra con su clave privada: c^d mod N =")
+    print(f"   {m2}   -> igual a m: {m2 == m}")
+    print(f"   (con el TCR, que es mas rapido, da lo mismo: {descifrar_tcr(c, (p, q, d)) == m})")
+    print(f'Paso 9. Bob convierte el numero en texto: "{entero_a_texto(m2)}"')
+    print("\nAVISO: este RSA 'de libro' no usa relleno aleatorio (OAEP); es solo para aprender.")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 02_rsa.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
