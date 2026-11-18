@@ -18,6 +18,12 @@ Resultado esperado de la escalera para k = 13 = 1101_2 sobre la curva de
 trabajo (pares (R0, R1)):  (O, G) -> (G, 2G) -> (3G, 4G) -> (6G, 7G) -> (13G, 14G).
 
 AVISO: codigo educativo; no es de tiempo constante a nivel de maquina.
+
+Prueba con tus propios datos
+----------------------------
+    python 05_multiplicacion_escalar.py 13
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 05_multiplicacion_escalar.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 import random
@@ -184,7 +190,8 @@ def pruebas():
     print("05_multiplicacion_escalar: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     E = Curva(24, 13, 29)
     G = (1, 3)
     print("Duplicar y sumar con k = 13:")
@@ -208,5 +215,112 @@ if __name__ == "__main__":
         k2 = paso_bebe_paso_gigante(E2, G2, Q, n); t2 = time.perf_counter()
         assert k1 == k2 == k
         print(f"  {bits:9d} | {n:9d} | {t1 - t0:16.4f} | {t2 - t1:20.4f}")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe un entero k >= 1 para calcular kG en la curva de clase\n"
+            "(ejemplo: 13, o uno gigante como 123456789123456789). Solo Enter = ejemplo de clase: ")
+USO = "python 05_multiplicacion_escalar.py 13"
+
+
+def con_tus_datos(texto):
+    try:
+        k = leer_enteros(texto)[0]
+    except (ValueError, IndexError):
+        print("Escribe un numero entero. Ejemplo:\n  " + USO)
+        return
+    if k < 1:
+        print("k debe ser >= 1. Ejemplo:\n  " + USO)
+        return
+    E = Curva(24, 13, 29)
+    G, n = (1, 3), 19
+    fmt = lambda P: "O" if P is INFINITO else f"({P[0]},{P[1]})"
+    print(f"Tu k = {k}.  Curva de clase y^2 = x^3 + 24x + 13 sobre F_29, G = (1,3) de orden 19.")
+    print(f"k en binario: {bin(k)[2:]}  ({k.bit_length()} bits)")
+    detalle = k.bit_length() <= 40
+
+    print("\n1. Duplicar y sumar (se leen los bits de izquierda a derecha):")
+    print("   El primer bit es 1: se empieza con R = 1G. Despues, por cada bit:")
+    print("   D = duplicar (R = 2R); y si el bit es 1, ademas S = sumar G (R = R + G).")
+    E.operaciones = 0
+    R, multiplo = G, 1
+    if detalle:
+        print(f"   inicio          R = 1G = {fmt(R)}")
+    for bit in bin(k)[3:]:
+        R, multiplo = E.suma(R, R), 2 * multiplo
+        if detalle:
+            print(f"   bit {bit}: D  ->  R = {multiplo}G = {fmt(R)}")
+        if bit == "1":
+            R, multiplo = E.suma(R, G), multiplo + 1
+            if detalle:
+                print(f"          S  ->  R = {multiplo}G = {fmt(R)}")
+    if not detalle:
+        print("   (k tiene muchos bits: no se imprime cada paso)")
+    print(f"   kG = {fmt(R)}   con {E.operaciones} operaciones (sumas o duplicaciones).")
+    print(f"   Sumar G una por una habria necesitado {corto(k - 1)} sumas.")
+
+    print("\n2. Escalera de Montgomery (una suma y una duplicacion por bit, sea 0 o 1;")
+    print("   asi el tiempo no delata los bits de k). Siempre R1 - R0 = G:")
+    R0, pasos = escalera_montgomery(E, k, G, mostrar=detalle)
+    if not detalle:
+        print("   (k tiene muchos bits: no se imprime cada paso)")
+    print(f"   resultado: R0 = {fmt(R0)}   (coincide con el metodo 1: {R0 == R})")
+
+    r = k % n
+    print(f"\n3. Comprobacion: como 19G = O, kG = (k mod 19)G = {r}G = {fmt(duplicar_y_sumar(E, r, G))}")
+    print("   En una curva real (orden de 256 bits) no hay atajo: el numero de operaciones crece")
+    print("   como el numero de bits de k, mientras que deshacer kG (ECDLP) es inviable.")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 05_multiplicacion_escalar.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
