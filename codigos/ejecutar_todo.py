@@ -1,7 +1,7 @@
 """
 ejecutar_todo.py
 ================
-Ejecuta los doce programas en orden y reporta si sus pruebas pasaron.
+Ejecuta los doce programas en orden (ejemplo de clase) y reporta si sus pruebas pasaron.
 
     python ejecutar_todo.py
 """
@@ -15,7 +15,8 @@ archivos = sorted(carpeta.glob("[0-9][0-9]_*.py"))
 fallos = 0
 for archivo in archivos:
     inicio = time.perf_counter()
-    r = subprocess.run([sys.executable, str(archivo)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, str(archivo), "--ejemplo"], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL)
     duracion = time.perf_counter() - inicio
     ok = r.returncode == 0 and "todas las pruebas pasaron" in r.stdout
     fallos += not ok
@@ -24,3 +25,4 @@ for archivo in archivos:
         print(r.stdout[-1500:], r.stderr[-1500:])
 print(f"\n{len(archivos) - fallos} de {len(archivos)} programas correctos.")
 sys.exit(1 if fallos else 0)
+
