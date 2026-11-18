@@ -29,6 +29,12 @@ Como ejecutar
 
 AVISO: codigo con fines educativos. Para proteger informacion real se deben
 usar bibliotecas criptograficas reconocidas y parametros estandarizados.
+
+Prueba con tus propios datos
+----------------------------
+    python 01_aritmetica_modular.py 240 46 13      (a = 240, n = 46, e = 13; e es opcional)
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 01_aritmetica_modular.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 
 
@@ -224,7 +230,8 @@ def pruebas():
     print("01_aritmetica_modular: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     print("Euclides para mcd(240, 46):")
     print("  mcd =", mcd(240, 46, mostrar=True))
     print("Bezout:", euclides_extendido(240, 46), "  (2 = 240*(-9) + 46*47)")
@@ -233,5 +240,121 @@ if __name__ == "__main__":
     print("  resultado =", potencia_modular(3, 13, 100, mostrar=True))
     print("TCR: x = 2 (mod 3), x = 3 (mod 5)  ->  x =", tcr([2, 3], [3, 5]))
     print("phi(12) =", phi_euler(12))
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe dos enteros positivos a y n, y si quieres un exponente e\n"
+            "(ejemplo: 240 46 13). Solo Enter = ejemplo de clase: ")
+USO = 'python 01_aritmetica_modular.py 240 46 13      (a = 240, n = 46, e = 13; e es opcional)'
+
+
+def con_tus_datos(texto):
+    try:
+        numeros = leer_enteros(texto)
+    except ValueError:
+        print("Escribe solo numeros enteros. Ejemplo:\n  " + USO)
+        return
+    if len(numeros) < 2 or numeros[0] < 0 or numeros[1] < 2:
+        print("Hacen falta dos enteros a >= 0 y n >= 2. Ejemplo:\n  " + USO)
+        return
+    a, n = numeros[0], numeros[1]
+    e = numeros[2] if len(numeros) > 2 else None
+    print(f"Tus datos: a = {a}, n = {n}" + (f", e = {e}" if e is not None else ""))
+
+    print(f"\n1. Congruencia: {a} = {a // n}*{n} + {a % n},  asi que  {a} = {a % n} (mod {n}).")
+
+    print(f"\n2. Algoritmo de Euclides para mcd({a}, {n}) (cada fila: dividendo = cociente*divisor + resto):")
+    g = mcd(a, n, mostrar=True)
+    print(f"   mcd({a}, {n}) = {g}   (el ultimo resto distinto de 0)")
+
+    g, x, y = euclides_extendido(a, n)
+    print(f"\n3. Identidad de Bezout (Euclides extendido):  {a}*({x}) + {n}*({y}) = {a * x + n * y}")
+
+    print(f"\n4. Inverso de {a} modulo {n}:")
+    if g == 1:
+        inv = inverso_modular(a, n)
+        print(f"   {a}^(-1) = {inv} (mod {n})  (sale del coeficiente {x} de Bezout: {x} mod {n} = {inv})")
+        print(f"   comprobacion: {a}*{inv} = {a * inv} = {a * inv // n}*{n} + {a * inv % n}")
+    else:
+        print(f"   NO existe, porque mcd({a}, {n}) = {g} es distinto de 1.")
+
+    print(f"\n5. Funcion phi de Euler:")
+    if n < 10 ** 12:
+        factores = factorizar_por_tanteo(n)
+        escrito = " * ".join(f"{p}^{k}" if k > 1 else str(p) for p, k in factores.items())
+        ph = phi_euler(n)
+        print(f"   {n} = {escrito},  phi({n}) = {ph}"
+              "   (cuantos numeros entre 1 y n no comparten factores con n)")
+        if g == 1:
+            print(f"   Teorema de Euler: {a}^phi({n}) = {a}^{ph} mod {n} = {pow(a, ph, n)}  (siempre da 1)")
+    else:
+        print("   n es demasiado grande para factorizarlo por tanteo; se omite.")
+
+    if e is not None:
+        if e < 0:
+            print("\n6. El exponente debe ser >= 0; se omite la potencia.")
+        else:
+            print(f"\n6. {a}^{e} mod {n} con cuadrados sucesivos; {e} en binario = {bin(e)[2:]}.")
+            print("   En cada paso se eleva al cuadrado; si el bit es 1, se multiplica al acumulado:")
+            r = potencia_modular(a, e, n, mostrar=e.bit_length() <= 64)
+            print(f"   resultado: {a}^{e} mod {n} = {r}   (comprobacion con pow de Python: {pow(a, e, n)})")
+
+    coef = fraccion_continua(a, n)
+    print(f"\n7. Fraccion continua de {a}/{n} = [{coef[0]}; {', '.join(map(str, coef[1:]))}]")
+    conv = convergentes(coef)
+    print("   convergentes (fracciones que se acercan a a/n):",
+          ", ".join(f"{h}/{k}" for h, k in conv[:10]) + (" ..." if len(conv) > 10 else ""))
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 01_aritmetica_modular.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
