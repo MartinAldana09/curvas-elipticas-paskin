@@ -28,6 +28,12 @@ Curva de trabajo del proyecto
     y^2 = x^3 + 24 x + 13  sobre F_29,  G = (1, 3),  #E = 38,  orden(G) = 19.
 
 AVISO: parametros pequenos, solo para aprender. No son seguros.
+
+Prueba con tus propios datos
+----------------------------
+    python 04_curvas_elipticas.py 2 3 97      (a = 2, b = 3, p = 97; puedes agregar un punto: 2 3 97 3 6)
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 04_curvas_elipticas.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 
@@ -181,7 +187,8 @@ def pruebas():
     print("04_curvas_elipticas: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     E = CurvaEliptica(24, 13, 29)
     G = (1, 3)
     print("Curva:", E)
@@ -193,5 +200,166 @@ if __name__ == "__main__":
     for k, Q in E.tabla_de_multiplos(G):
         print(f"  {k:2d}G = {formato(Q)}")
     print("Ejemplo: (1,3) + (11,10) =", formato(E.suma((1, 3), (11, 10))))
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe a, b y p (p primo mayor que 3) para la curva y^2 = x^3 + ax + b,\n"
+            "y si quieres un punto x y (ejemplo: 2 3 97  o  24 13 29 1 3).\n"
+            "Solo Enter = ejemplo de clase: ")
+USO = "python 04_curvas_elipticas.py 2 3 97      (a = 2, b = 3, p = 97; puedes agregar un punto: 2 3 97 3 6)"
+
+
+def es_primo_pequeno(n):
+    return n > 1 and all(n % d for d in range(2, math.isqrt(n) + 1))
+
+
+def explicar_suma(E, P, Q):
+    """Imprime la cuenta de P + Q con las formulas de la secante o la tangente."""
+    p = E.p
+    if P is INFINITO or Q is INFINITO or (P[0] == Q[0] and (P[1] + Q[1]) % p == 0):
+        print(f"   {formato(P)} + {formato(Q)} = O")
+        return
+    (x1, y1), (x2, y2) = P, Q
+    if P == Q:
+        num, den = (3 * x1 * x1 + E.a) % p, (2 * y1) % p
+        print(f"   Tangente: m = (3x1^2 + a)/(2y1) = (3*{x1}^2 + {E.a})/(2*{y1}) = {num}/{den} (mod {p})")
+    else:
+        num, den = (y2 - y1) % p, (x2 - x1) % p
+        print(f"   Secante: m = (y2 - y1)/(x2 - x1) = ({y2} - {y1})/({x2} - {x1}) = {num}/{den} (mod {p})")
+    inv = pow(den, -1, p)
+    m = num * inv % p
+    print(f"   dividir es multiplicar por el inverso: {den}^(-1) = {inv} (mod {p}),  m = {num}*{inv} mod {p} = {m}")
+    x3 = (m * m - x1 - x2) % p
+    y3 = (m * (x1 - x3) - y1) % p
+    print(f"   x3 = m^2 - x1 - x2 = {m}^2 - {x1} - {x2} = {x3} (mod {p})")
+    print(f"   y3 = m(x1 - x3) - y1 = {m}*({x1} - {x3}) - {y1} = {y3} (mod {p})")
+    print(f"   resultado: {formato(P)} + {formato(Q)} = ({x3},{y3})")
+
+
+def con_tus_datos(texto):
+    try:
+        numeros = leer_enteros(texto)
+    except ValueError:
+        print("Escribe solo numeros enteros. Ejemplo:\n  " + USO)
+        return
+    if len(numeros) < 3:
+        print("Hacen falta tres numeros: a, b y p. Ejemplo:\n  " + USO)
+        return
+    a, b, p = numeros[:3]
+    if p <= 3 or not es_primo_pequeno(p):
+        print(f"p = {p} no sirve: debe ser un primo mayor que 3 (por ejemplo 29, 97, 101, 1009).")
+        return
+    if p > 200000:
+        print("p es demasiado grande para contar los puntos uno por uno (usa p < 200000).")
+        return
+    print(f"Tu curva: y^2 = x^3 + {a % p}x + {b % p} sobre F_{p}")
+    D = (4 * a ** 3 + 27 * b ** 2) % p
+    print(f"\n1. Discriminante: 4a^3 + 27b^2 mod {p} = {D}")
+    if D == 0:
+        print("   Es 0: la curva es SINGULAR (tiene un pico o un nudo) y sus puntos no forman")
+        print("   un grupo como el de las curvas elipticas. Cambia a o b.")
+        return
+    print("   Es distinto de 0: la curva es no singular (es una curva eliptica).")
+    E = CurvaEliptica(a, b, p)
+    puntos = E.puntos()
+    N = len(puntos) + 1
+    print(f"\n2. Puntos: se prueba cada x de 0 a {p - 1} y se busca y con y^2 = x^3 + ax + b (mod {p}).")
+    if len(puntos) <= 120:
+        print("   " + " ".join(formato(P) for P in puntos))
+    else:
+        print("   primeros: " + " ".join(formato(P) for P in puntos[:20]) + " ...")
+    print(f"   #E(F_{p}) = {len(puntos)} puntos (x, y) + el punto en el infinito O = {N}")
+    cota = 2 * math.sqrt(p)
+    print(f"\n3. Teorema de Hasse: |#E - (p + 1)| = |{N} - {p + 1}| = {abs(N - p - 1)}"
+          f" <= 2*sqrt({p}) = {cota:.2f}   {'(se cumple)' if abs(N - p - 1) <= cota else '(?)'}")
+    if es_primo_pequeno(N):
+        print(f"   #E = {N} es primo: todo punto distinto de O genera la curva entera.")
+    else:
+        divisores = [k for k in range(2, N) if N % k == 0]
+        print(f"   #E = {N} no es primo; por Lagrange, el orden de cada punto divide a {N}"
+              f" (divisores: 1, {', '.join(map(str, divisores))}, {N}).")
+
+    G = None
+    if len(numeros) >= 5:
+        G = (numeros[3] % p, numeros[4] % p)
+        if not E.contiene(G):
+            print(f"\n   Ojo: ({numeros[3]},{numeros[4]}) no esta en la curva:"
+                  f" {G[1]}^2 mod {p} = {G[1] ** 2 % p}, pero x^3 + ax + b = {(G[0] ** 3 + E.a * G[0] + E.b) % p}.")
+            G = None
+    if G is None:
+        G = next((P for P in puntos if P[1] != 0), None)
+        if G is None:
+            print("\nLa curva no tiene puntos con y distinto de 0; no hay tabla de multiplos.")
+            return
+    n = E.orden(G)
+    print(f"\n4. Punto G = {formato(G)}: su orden es {n} (el menor n con nG = O).")
+    print("   Tabla de multiplos (cada fila es la anterior + G):")
+    tabla = E.tabla_de_multiplos(G)
+    filas = tabla if n <= 40 else tabla[:12] + [None] + tabla[-3:]
+    for fila in filas:
+        if fila is None:
+            print("    ...")
+        else:
+            k, Q = fila
+            print(f"   {k:4d}G = {formato(Q)}")
+
+    print("\n5. Como se calcula 2G (recta tangente):")
+    G2 = E.suma(G, G)
+    explicar_suma(E, G, G)
+    if G2 is not INFINITO and n > 3:
+        print("   Y 3G = 2G + G (recta secante):")
+        explicar_suma(E, G2, G)
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 04_curvas_elipticas.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
