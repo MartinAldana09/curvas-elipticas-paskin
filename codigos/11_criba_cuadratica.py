@@ -33,6 +33,12 @@ mcd(114 - 80, 1649) = 17,  y 1649 = 17 * 97.
 
 AVISO: version didactica, sin las optimizaciones de las implementaciones
 reales (polinomios multiples, variacion de primos grandes, etc.).
+
+Prueba con tus propios datos
+----------------------------
+    python 11_criba_cuadratica.py 1000000016000000063
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 11_criba_cuadratica.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 
@@ -224,7 +230,8 @@ def pruebas():
     print("11_criba_cuadratica: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     N = 1649
     print("Ejemplo pequeno, N = 1649:")
     for x in (41, 42, 43):
@@ -239,5 +246,185 @@ if __name__ == "__main__":
         print(f"N = {N} ({len(str(N))} cifras)")
         f = criba_cuadratica(N, mostrar=True)
         print(f"  factor: {f}, cofactor: {N // f}  ({time.perf_counter() - t:.2f} s)")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe un entero N para factorizarlo con la criba cuadratica\n"
+            "(ejemplo: 1649 o 1000000016000000063). Solo Enter = ejemplo de clase: ")
+USO = "python 11_criba_cuadratica.py 1000000016000000063"
+
+
+def es_primo_probable(n):
+    """Miller-Rabin con bases fijas (exacto para n < 3.3 * 10^24)."""
+    if n < 2:
+        return False
+    bases = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41]
+    for p in bases:
+        if n % p == 0:
+            return n == p
+    s, r = 0, n - 1
+    while r % 2 == 0:
+        s, r = s + 1, r // 2
+    for a in bases:
+        x = pow(a, r, n)
+        if x in (1, n - 1):
+            continue
+        for _ in range(s - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+
+def factorizar_pequeno(v, cota=50):
+    """Factoriza v con primos menores que 'cota'; devuelve (texto, es_suave)."""
+    partes, d = [], 2
+    while d < cota and v > 1:
+        e = 0
+        while v % d == 0:
+            v //= d
+            e += 1
+        if e:
+            partes.append(f"{d}^{e}" if e > 1 else str(d))
+        d += 1
+    if v > 1:
+        partes.append(str(v))
+    return " * ".join(partes) if partes else "1", v == 1
+
+
+def con_tus_datos(texto):
+    import time
+    try:
+        N = leer_enteros(texto)[0]
+    except (ValueError, IndexError):
+        print("Escribe un numero entero. Ejemplo:\n  " + USO)
+        return
+    if N < 4:
+        print("N debe ser >= 4. Ejemplo:\n  " + USO)
+        return
+    print(f"Tu numero: N = {N}  ({len(str(N))} cifras)")
+    if len(str(N)) > 30:
+        print("Aviso: con mas de 30 cifras esta version en Python puro puede tardar varios minutos.")
+
+    r = math.isqrt(N)
+    if r * r == N:
+        print(f"\nN es un cuadrado perfecto: N = {r}^2")
+    print(f"\n1. Idea: buscar x un poco mayores que sqrt(N) = {r}..., para que x^2 - N sea pequeno,")
+    print("   y quedarse con los que se factorizan solo con primos menores que 30 ('suaves'):")
+    for x in range(r + 1, r + 7):
+        v = x * x - N
+        f, suave = factorizar_pequeno(v, 30)
+        print(f"   x = {x}:  x^2 - N = {v} = {f}" + ("   <- suave" if suave else ""))
+    # Busqueda a mano de un producto que sea cuadrado (solo sirve con N pequeno)
+    suaves = [x for x in range(r + 1, r + 300) if factorizar_pequeno(x * x - N, 30)[1]][:12]
+    hallado = None
+    for mascara in range(1, 2 ** len(suaves)):
+        xs = [x for i, x in enumerate(suaves) if mascara >> i & 1]
+        producto = math.prod(x * x - N for x in xs)
+        Y = math.isqrt(producto)
+        if Y * Y == producto:
+            X = math.prod(xs) % N
+            g = math.gcd(X - Y, N)
+            if 1 < g < N:
+                hallado = (xs, producto, Y, X, g)
+                break
+    if hallado:
+        xs, producto, Y, X, g = hallado
+        if len(xs) == 1:
+            print(f"   Con x = {xs[0]} ya sale un cuadrado: {producto} = {Y}^2")
+        else:
+            print(f"   Producto de los valores de x = {', '.join(map(str, xs))}:"
+                  f" {' * '.join(str(x * x - N) for x in xs)} = {producto} = {Y}^2  (un cuadrado)")
+        print(f"   X = {' * '.join(map(str, xs))} mod N = {X},  Y = {Y % N}:  X^2 = Y^2 (mod N)")
+        print(f"   mcd(X - Y, N) = mcd({X - Y % N}, {N}) = {g}  ->  N = {g} * {N // g}")
+    else:
+        print("   Con N grande casi ningun valor es suave: hacen falta miles de valores y una")
+        print("   'criba' para encontrarlos rapido, y algebra lineal para combinarlos.")
+
+    inicio = time.perf_counter()
+    factores = {}
+    resto = N
+    for p in (2, 3, 5, 7):
+        while resto % p == 0:
+            factores[p] = factores.get(p, 0) + 1
+            resto //= p
+    print("\n2. Factorizacion completa con la criba cuadratica:")
+    if factores:
+        print(f"   primero se quitan los factores 2, 3, 5, 7: {', '.join(map(str, factores))}")
+    pendientes = [resto] if resto > 1 else []
+    while pendientes:
+        m = pendientes.pop()
+        if es_primo_probable(m):
+            factores[m] = factores.get(m, 0) + 1
+            continue
+        print(f"\n   Criba cuadratica sobre {m}:")
+        f = criba_cuadratica(m, mostrar=True)
+        if not f or f in (1, m):
+            print("   No se encontro factor; se deja como esta.")
+            factores[m] = factores.get(m, 0) + 1
+            continue
+        print(f"   factor encontrado: {f}  ->  {m} = {f} * {m // f}")
+        pendientes += [f, m // f]
+
+    escrito = " * ".join(f"{p}^{k}" if k > 1 else str(p) for p, k in sorted(factores.items()))
+    print(f"\nFactorizacion: {N} = {escrito}")
+    print(f"comprobacion: {math.prod(p ** k for p, k in factores.items()) == N};"
+          f"  tiempo: {time.perf_counter() - inicio:.2f} s")
+    if factores == {N: 1}:
+        print("(N es primo: no tiene factores propios)")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 11_criba_cuadratica.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
