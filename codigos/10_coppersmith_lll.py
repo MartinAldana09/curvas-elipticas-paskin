@@ -46,6 +46,12 @@ La ejecucion completa tarda menos de un minuto (LLL en Python puro).
 
 AVISO: codigo educativo. Los ataques solo funcionan contra RSA mal usado
 (exponente pequeno sin relleno aleatorio).
+
+Prueba con tus propios datos
+----------------------------
+    python 10_coppersmith_lll.py "Gato2026"
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 10_coppersmith_lll.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import math
 import random
@@ -379,7 +385,8 @@ def pruebas():
     print("10_coppersmith_lll: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     print("LLL sobre la base {(1, 0, 2000000), (0, 1, 3000000)}:")
     print("  ", lll([[1, 0, 2 * 10 ** 6], [0, 1, 3 * 10 ** 6]]),
           " (el primer vector expresa la relacion 3*2000000 - 2*3000000 = 0)")
@@ -400,5 +407,111 @@ if __name__ == "__main__":
     r, w = ataque_hastad_relleno(modulos, cifrados, rellenos, 2 ** 300)
     print(f"B. Hastad con relleno fijo M_i = M + i*2^450, tres modulos de 512 bits:"
           f" dimension {w}, {'RECUPERADO' if r == M else 'no recuperado'}")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe una clave secreta corta (hasta 15 caracteres) que Eve intentara\n"
+            "descubrir con el metodo de Coppersmith. Solo Enter = ejemplo de clase: ")
+USO = 'python 10_coppersmith_lll.py "Gato2026"'
+
+
+def con_tus_datos(secreto):
+    import time
+    s = secreto.encode("utf-8")
+    if len(s) > 15:
+        print("La clave tiene mas de 15 bytes (120 bits). Con el reticulo de dimension 10 de")
+        print("este programa el metodo alcanza unos 120 bits desconocidos (el limite teorico")
+        print("para RSA-512 con e = 3 es cerca de 170 bits). Usa una clave mas corta, por ejemplo:")
+        print("  " + USO)
+        return
+    texto_fijo = b"La clave de hoy es: "
+    k = 8 * len(s)
+    prefijo = int.from_bytes(texto_fijo, "big")
+    x0 = int.from_bytes(s, "big")
+    M = (prefijo << k) + x0
+    print(f'Mensaje que Alice cifra: "{(texto_fijo + s).decode("utf-8", errors="replace")}"')
+    print(f"Eve conoce la parte fija \"{texto_fijo.decode()}\" pero no tu clave ({k} bits desconocidos).")
+
+    N = modulo_rsa(512)
+    c = pow(M, 3, N)
+    print("\n1. Lo que viaja por la red (RSA-512 con e = 3, sin relleno):")
+    print(f"   N = {corto(N)}")
+    print(f"   c = M^3 mod N = {corto(c)}")
+
+    print("\n2. Eve escribe M = P + x, con P = (parte fija)*2^k conocido y x < 2^k desconocido:")
+    print("   f(x) = (P + x)^3 - c = 0 (mod N), un polinomio de grado 3 con una raiz PEQUENA.")
+    print(f"   Coppersmith: arma un reticulo con multiplos de f y potencias de N, lo reduce con LLL")
+    print("   y obtiene un polinomio con la misma raiz pero SIN modulo, que se resuelve normalmente.")
+    print("   Se prueba primero con un reticulo pequeno y se agranda si no alcanza:")
+    recuperado = None
+    for m_ in (1, 2, 3):
+        t = time.perf_counter()
+        recuperado, w = ataque_mensaje_estereotipado(N, c, prefijo, k, m=m_)
+        t = time.perf_counter() - t
+        print(f"   dimension {w:2d}: {'raiz encontrada' if recuperado is not None else 'no alcanza'}"
+              f"  ({t:.1f} s)", flush=True)
+        if recuperado is not None:
+            break
+    if recuperado is None:
+        print("   No se encontro la raiz (prueba con una clave mas corta).")
+        return
+    x = recuperado - (prefijo << k)
+    descubierta = x.to_bytes(len(s), "big").decode("utf-8", errors="replace")
+    print(f"\n3. Raiz encontrada: x = {x}  ->  \"{descubierta}\"")
+    print(f"   Es tu clave? {recuperado == M}")
+    print(f"   Probar todas las claves posibles habria exigido hasta 2^{k} = {corto(2 ** k)} intentos.")
+    print("\nDefensa: usar relleno aleatorio (OAEP); asi no hay partes conocidas del mensaje.")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 10_coppersmith_lll.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
