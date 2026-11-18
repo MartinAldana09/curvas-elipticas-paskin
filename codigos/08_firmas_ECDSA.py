@@ -24,6 +24,12 @@ Resultados esperados en la curva de clase (n = 19, d = 7, e = 5, k = 3):
 
 AVISO: educativo. En la practica k se genera de forma determinista (RFC 6979)
 o con un generador aleatorio criptografico, y se usan bibliotecas auditadas.
+
+Prueba con tus propios datos
+----------------------------
+    python 08_firmas_ECDSA.py "Yo, Martin, apruebo este documento"
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 08_firmas_ECDSA.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import hashlib
 import secrets
@@ -151,7 +157,8 @@ def pruebas():
     print("08_firmas_ECDSA: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     E = CURVA_CLASE
     d = 7
     Q = E.multiplicar(d, E.G)
@@ -173,5 +180,120 @@ if __name__ == "__main__":
     e1, e2 = hash_a_entero("transaccion A", P256.n), hash_a_entero("transaccion B", P256.n)
     _, d_rec = ataque_nonce_repetido(P256.n, e1, firmar(P256, d, e1, k), e2, firmar(P256, d, e2, k))
     print("  nonce repetido -> clave privada recuperada:", d_rec == d)
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = "Escribe el mensaje que quieres firmar. Solo Enter = ejemplo de clase: "
+USO = 'python 08_firmas_ECDSA.py "Yo, Martin, apruebo este documento"'
+
+
+def con_tus_datos(mensaje):
+    E = P256
+    n = E.n
+    print(f'Mensaje: "{mensaje}"   (curva P-256, hash SHA-256)')
+    d = secrets.randbelow(n - 1) + 1
+    Q = E.multiplicar(d, E.G)
+    print("\n1. Claves de quien firma:")
+    print(f"   privada d = {corto(d)}")
+    print(f"   publica Q = dG = (x = {corto(Q[0])}, y = ...)")
+
+    h = hashlib.sha256(mensaje.encode("utf-8")).hexdigest()
+    e = hash_a_entero(mensaje, n)
+    print("\n2. Huella del mensaje (SHA-256):")
+    print(f"   {h}")
+    print(f"   como numero: e = {corto(e)}")
+
+    print("\n3. Firmar:")
+    k = secrets.randbelow(n - 1) + 1
+    R = E.multiplicar(k, E.G)
+    r = R[0] % n
+    s = pow(k, -1, n) * (e + d * r) % n
+    print(f"   nonce k al azar = {corto(k)}")
+    print(f"   R = kG,  r = x(R) mod n = {corto(r)}")
+    print(f"   s = k^(-1) (e + d r) mod n = {corto(s)}")
+    print("   Firma = (r, s). Se envia junto con el mensaje.")
+
+    print("\n4. Verificar (solo con la clave publica Q):")
+    w = pow(s, -1, n)
+    u1, u2 = e * w % n, r * w % n
+    X = E.suma(E.multiplicar(u1, E.G), E.multiplicar(u2, Q))
+    print(f"   w = s^(-1) mod n,  u1 = e w = {corto(u1)},  u2 = r w = {corto(u2)}")
+    print(f"   X = u1 G + u2 Q;  x(X) mod n = {corto(X[0] % n)}")
+    print(f"   coincide con r: {X[0] % n == r}  ->  firma VALIDA: {verificar(E, Q, e, (r, s))}")
+
+    alterado = mensaje + "!"
+    e2 = hash_a_entero(alterado, n)
+    print(f'\n5. Si alguien cambia el mensaje a "{alterado}":')
+    print(f"   nueva huella: {hashlib.sha256(alterado.encode('utf-8')).hexdigest()}")
+    print("   (un solo caracter cambia toda la huella)")
+    print(f"   la misma firma sirve? {verificar(E, Q, e2, (r, s))}")
+
+    otro = "Otro documento cualquiera"
+    e_otro = hash_a_entero(otro, n)
+    f1 = firmar(E, d, e, k)
+    f2 = firmar(E, d, e_otro, k)
+    print(f'\n6. Error grave: se firma tambien "{otro}" con el MISMO nonce k.')
+    print(f"   las dos firmas tienen el mismo r: {f1[0] == f2[0]}")
+    k_rec, d_rec = ataque_nonce_repetido(n, e, f1, e_otro, f2)
+    print(f"   k = (e1 - e2)/(s1 - s2) = {corto(k_rec)}")
+    print(f"   d = (s1 k - e1)/r       = {corto(d_rec)}")
+    print(f"   es la clave privada?  {d_rec == d}")
+    falsa = "Transferir todo a Eve"
+    e_falsa = hash_a_entero(falsa, n)
+    firma_falsa = firmar(E, d_rec, e_falsa)
+    print(f'   Eve firma "{falsa}" y la firma pasa la verificacion: {verificar(E, Q, e_falsa, firma_falsa)}')
+    print("   (un error asi revelo en 2010 la clave con la que Sony firmaba el software de la PlayStation 3)")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 08_firmas_ECDSA.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
