@@ -23,6 +23,12 @@ Contenido
 
 AVISO: implementacion educativa (sin tiempo constante ni validaciones completas).
 Para usos reales: bibliotecas como 'cryptography' (X25519 / ECDH con P-256).
+
+Prueba con tus propios datos
+----------------------------
+    python 06_intercambio_claves_ECDH.py 3 5      (a = 3 para Alice, b = 5 para Bob)
+o ejecuta el archivo sin nada mas y escribe tus datos cuando te los pida.
+Con  python 06_intercambio_claves_ECDH.py --ejemplo  se ve el ejemplo de clase y las pruebas.
 """
 import hashlib
 import secrets
@@ -119,7 +125,8 @@ def pruebas():
     print("06_intercambio_claves_ECDH: todas las pruebas pasaron.")
 
 
-if __name__ == "__main__":
+def ejemplo_de_clase():
+    """Lo que se muestra sin datos: el ejemplo de clase del informe."""
     E = CURVA_CLASE
     print("Ejemplo de clase:", "G =", E.G, " n =", E.n)
     A, B = E.multiplicar(3, E.G), E.multiplicar(5, E.G)
@@ -142,5 +149,116 @@ if __name__ == "__main__":
     k_eve_alice = derivar_clave(secreto_compartido(P256, e, A))
     print("  Alice cree hablar con Bob, pero comparte clave con Eve:", k_alice_eve == k_eve_alice)
     print("  Defensa: firmar las claves publicas (ECDSA, ver 08_firmas_ECDSA.py).")
-    print()
-    pruebas()
+
+
+# ---------------------------------------------------------------------------
+# Prueba con tus propios datos
+# ---------------------------------------------------------------------------
+def leer_datos(pregunta):
+    """Devuelve los datos que escribe el usuario (texto) o "" si no hay.
+
+    * python ARCHIVO.py tus datos   -> usa lo que va despues del nombre del archivo.
+    * python ARCHIVO.py             -> si hay teclado, hace la pregunta; con solo
+                                       Enter se muestra el ejemplo de clase.
+    * python ARCHIVO.py --ejemplo   -> ejemplo de clase y pruebas, sin preguntar.
+    """
+    import builtins
+    import os
+    import sys
+    argumentos = sys.argv[1:]
+    # Si el codigo se pego en una celda de Jupyter o Colab, sys.argv trae los
+    # datos del "kernel" (-f archivo.json), que no son del usuario.
+    if "launcher" in os.path.basename(sys.argv[0] if sys.argv else "") or argumentos[:1] == ["-f"]:
+        argumentos = []
+    if argumentos:
+        return "" if argumentos == ["--ejemplo"] else " ".join(argumentos)
+    hay_teclado = getattr(builtins, "__IPYTHON__", False) or (
+        sys.stdin is not None and sys.stdin.isatty())
+    if not hay_teclado:
+        return ""
+    try:
+        return input(pregunta).strip()
+    except EOFError:
+        return ""
+
+
+def corto(n, cifras=12):
+    """Muestra un entero muy largo como 'primeras...ultimas cifras (k cifras)'."""
+    s = str(n)
+    if len(s) <= 2 * cifras + 3:
+        return s
+    return f"{s[:cifras]}...{s[-cifras:]} ({len(s)} cifras)"
+
+
+def leer_enteros(texto):
+    """Convierte '240 46 13' o '240, 46, 13' en la lista [240, 46, 13]."""
+    return [int(t) for t in texto.replace(",", " ").split()]
+
+
+PREGUNTA = ("Escribe el numero secreto de Alice y el de Bob (dos enteros >= 1, ejemplo: 3 5).\n"
+            "Solo Enter = ejemplo de clase: ")
+USO = "python 06_intercambio_claves_ECDH.py 3 5      (a = 3 para Alice, b = 5 para Bob)"
+
+
+def con_tus_datos(texto):
+    try:
+        a, b = leer_enteros(texto)[:2]
+    except ValueError:
+        print("Escribe dos numeros enteros. Ejemplo:\n  " + USO)
+        return
+    if a < 1 or b < 1:
+        print("Los secretos deben ser >= 1. Ejemplo:\n  " + USO)
+        return
+    E = CURVA_CLASE
+    fmt = lambda P: "O" if P is INFINITO else f"({P[0]},{P[1]})"
+    print(f"Secretos: Alice a = {a}, Bob b = {b}.  Curva de clase: G = (1,3), orden n = 19.")
+    A = E.multiplicar(a, E.G)
+    B = E.multiplicar(b, E.G)
+    print("\n1. Cada uno calcula su clave publica y la envia por un canal publico:")
+    print(f"   Alice: A = aG = {a}G = {fmt(A)}")
+    print(f"   Bob:   B = bG = {b}G = {fmt(B)}")
+    if A is INFINITO or B is INFINITO:
+        print("   Ojo: un secreto multiplo de 19 da el punto O, que no esconde nada. Usa otro numero.")
+        return
+    S_alice = E.multiplicar(a, B)
+    S_bob = E.multiplicar(b, A)
+    print("\n2. Cada uno combina SU secreto con la clave publica del otro:")
+    print(f"   Alice calcula aB = {a}*{fmt(B)} = {fmt(S_alice)}")
+    print(f"   Bob   calcula bA = {b}*{fmt(A)} = {fmt(S_bob)}")
+    print(f"   Iguales: {S_alice == S_bob}, porque aB = a(bG) = (ab)G = b(aG) = bA.")
+    if a * b < 19:
+        print(f"   Secreto compartido: (ab)G = {a * b}G = {fmt(S_alice)}")
+    else:
+        print(f"   Secreto compartido: (ab)G = {a * b}G = {(a * b) % 19}G = {fmt(S_alice)}"
+              f"   (porque 19G = O, se reduce {a * b} mod 19)")
+    if S_alice is not INFINITO:
+        print(f"   Clave de 128 bits derivada (SHA-256 de la x): {derivar_clave(S_alice).hex()}")
+
+    print("\n3. Eve ve G, A y B. En esta curva tan pequena puede probar todos los multiplos de G:")
+    R, k = INFINITO, 0
+    while R != A:
+        R, k = E.suma(R, E.G), k + 1
+    print(f"   encuentra {k}G = A, asi que conoce a mod 19 = {k} y calcula el secreto: {fmt(E.multiplicar(k, B))}")
+    print("   Por eso en la practica el orden de G tiene unos 256 bits.")
+
+    print("\n4. Lo mismo con P-256 (claves aleatorias de 256 bits, como en la practica):")
+    a2, A2 = generar_par(P256)
+    b2, B2 = generar_par(P256)
+    print(f"   a = {corto(a2)}   A = (x = {corto(A2[0])}, y = ...)")
+    print(f"   b = {corto(b2)}   B = (x = {corto(B2[0])}, y = ...)")
+    k_alice = derivar_clave(secreto_compartido(P256, a2, B2))
+    k_bob = derivar_clave(secreto_compartido(P256, b2, A2))
+    print(f"   clave de Alice: {k_alice.hex()}")
+    print(f"   clave de Bob:   {k_bob.hex()}   (iguales: {k_alice == k_bob})")
+    print("   Encontrar a desde A exigiria del orden de 2^128 operaciones.")
+
+
+if __name__ == "__main__":
+    datos = leer_datos(PREGUNTA)
+    if datos:
+        con_tus_datos(datos)
+        print("\n(Para ver el ejemplo de clase y las pruebas:  python 06_intercambio_claves_ECDH.py --ejemplo)")
+    else:
+        ejemplo_de_clase()
+        print()
+        pruebas()
